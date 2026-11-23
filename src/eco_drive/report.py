@@ -63,11 +63,15 @@ def instructions(p: Profile, plan: Plan, min_len_m: float = 300.0, q_mph: int = 
 
     stretches = []
     prev = 0
-    for a, b, val in out:
-        if val == 0 and b == len(p.s) - 1:
+    for a, b, raw in out:
+        if raw == 0 and b == len(p.s) - 1:
             continue  # final stop
+        # Sign = the limit covering most of the stretch (ties -> the lower one), not the max:
+        # one on-ramp shouldn't make two miles of city streets read as a 65 zone.
+        values, counts = np.unique(lim[a:b + 1], return_counts=True)
+        seg_lim = int(values[np.argmax(counts)])
+        val = min(int(raw), seg_lim)  # never instruct above the sign shown
         action = "Hold" if val == prev else ("Speed up to" if val > prev else "Ease off to")
-        seg_lim = int(np.max(lim[a:b + 1]))
         stretches.append(Stretch(p.s[a] / METERS_PER_MILE, p.s[b] / METERS_PER_MILE, action, val, seg_lim))
         prev = val
     return stretches
