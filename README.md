@@ -44,12 +44,22 @@ is what keeps others from using it.
    speed, a λ sweep for the fuel-vs-time curve, and the knee as the recommendation. It is
    a port of the Python planner and is tested number-for-number against it.
 
+**Bridges and tunnels:** terrain data measures the ground, so it shows a dip under every
+bridge and a hump over every tunnel. Where the matched OSM road is tagged `bridge` or
+`tunnel`, elevation is replaced with a straight line between the two ends before
+smoothing (`docs/js/terrain.js`). On the demo route this removed a 6.6 m fake dip at
+mi 1.1 that had been showing up as a >6% grade on a fast road.
+
 **Start** follows your GPS along the chosen plan: target speed, your speed, the posted
-limit, the next change, and time left. **Simulate** replays the drive at 10× for testing
+limit, the next change, and time left. **Spoken cues** (`docs/js/voice.js`, the browser's
+built-in speech) announce each change about 12 s ahead, e.g. "In half a mile, ease off to
+45. Hill ahead." They also cover going off route, slow traffic and arrival. There's at
+most one cue per 4 s, each cue is phrased relative to the last one spoken so they never
+contradict, and there's a mute button. **Simulate** replays the drive at 10× for testing
 at a desk.
 
-Local testing: `python3 -m http.server 8765 --directory docs --bind 127.0.0.1`, then open
-http://127.0.0.1:8765. Location needs HTTPS or localhost.
+Local dev server with caching off: `python3 scripts/serve.py`, then open http://localhost:8765.
+
 
 ## Python planner (reference + CLI)
 

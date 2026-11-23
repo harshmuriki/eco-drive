@@ -3,6 +3,7 @@
 
 import { savgol2, gradeFrom } from "./planner.js";
 import { fetchWays, matchLimits, limitsFromStaticSpeed } from "./limits.js";
+import { flattenStructures } from "./terrain.js";
 
 export const DS_M = 25;
 const SMOOTH_WINDOW_M = 250;
@@ -121,9 +122,6 @@ export async function waysForRoutes(resampled) {
  */
 export async function buildProfile(route, rs, waysOrPromise, elevationService) {
   const [elevRaw, ways] = await Promise.all([elevationAlong(elevationService, rs), waysOrPromise]);
-  const elev = savgol2(elevRaw, Math.round(SMOOTH_WINDOW_M / DS_M) | 1);
-  const ds = rs.s[1] - rs.s[0];
-  const grade = gradeFrom(elev, ds);
 
   let lim;
   if (ways) {
@@ -140,12 +138,19 @@ export async function buildProfile(route, rs, waysOrPromise, elevationService) {
     lim = limitsFromStaticSpeed(rs.s, stepEnds.length ? stepEnds : [{ endS: Infinity, staticSpeedMps: 15 }]);
   }
 
+  // Bridges/tunnels (known only from OSM) are straightened before smoothing.
+  const structures = lim.structure ? flattenStructures(elevRaw, lim.structure) : { elev: elevRaw, spans: [] };
+  const elev = savgol2(structures.elev, Math.round(SMOOTH_WINDOW_M / DS_M) | 1);
+  const ds = rs.s[1] - rs.s[0];
+  const grade = gradeFrom(elev, ds);
+
   const delayS = ((route.durationMillis ?? 0) - (route.staticDurationMillis ?? 0)) / 1000;
   const traffic = trafficCaps(rs, lim.limitMps, route.travelAdvisory?.speedReadingIntervals, delayS);
 
   return {
     s: rs.s, lat: rs.lat, lon: rs.lon,
     elev, elevRaw, grade,
+    structureSpans: structures.spans, // [{a, b, kind, deltaM}] sample indices
     postedLimit: lim.limitMps, // shown on the sign
     limit: traffic.capMps, // what the planner may not exceed
     limitTaggedFrac: lim.tagged.reduce((a, b) => a + b, 0) / lim.tagged.length,

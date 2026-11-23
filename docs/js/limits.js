@@ -100,10 +100,12 @@ export function matchLimits(lat, lon, ways) {
     const tagged = parseMaxspeed(tags.maxspeed);
     const limit = tagged ?? (DEFAULT_LIMIT_MPH[cls] ?? FALLBACK_MPH) * MPH;
     const oneway = tags.oneway === "yes" || cls === "motorway" || cls === "motorway_link";
+    // Bridges/tunnels: terrain data under them is the valley floor / hillside, not the road.
+    const structure = tags.bridge && tags.bridge !== "no" ? 1 : tags.tunnel && tags.tunnel !== "no" && tags.tunnel !== "building_passage" ? 2 : 0;
     for (let k = 0; k < g.length - 1; k++) {
       const [ax, ay] = toXY(g[k].lat, g[k].lon), [bx, by] = toXY(g[k + 1].lat, g[k + 1].lon);
       const id = segs.length;
-      segs.push({ ax, ay, bx, by, limit, tagged: tagged != null, cls, oneway });
+      segs.push({ ax, ay, bx, by, limit, tagged: tagged != null, cls, oneway, structure });
       const x0 = Math.floor(Math.min(ax, bx) / CELL_M), x1 = Math.floor(Math.max(ax, bx) / CELL_M);
       const y0 = Math.floor(Math.min(ay, by) / CELL_M), y1 = Math.floor(Math.max(ay, by) / CELL_M);
       for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
@@ -158,7 +160,9 @@ export function matchLimits(lat, lon, ways) {
     for (const [v, k] of counts) if (k > c || (k === c && v === limitMps[i])) { mode = v; c = k; }
     out[i] = mode;
   }
-  return { limitMps: out, tagged, highway, matchedFrac: raw.filter(Boolean).length / n, source: "osm" };
+  // 0 = ground, 1 = bridge, 2 = tunnel; only where we actually matched a road (no gap filling)
+  const structure = Uint8Array.from(raw, (s) => s?.structure ?? 0);
+  return { limitMps: out, tagged, highway, structure, matchedFrac: raw.filter(Boolean).length / n, source: "osm" };
 }
 
 /**

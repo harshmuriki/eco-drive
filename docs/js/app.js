@@ -4,6 +4,9 @@ import { drawChart } from "./chart.js";
 import { buildIndex, match, pointAt, valueAt, guidance, OFF_ROUTE_M } from "./match.js";
 import { MPH, M_PER_MILE, G_PER_GALLON } from "./physics.js";
 import { lamToDollarsPerHour } from "./planner.js";
+import { Speaker, changeCue, gradeAhead, leadDistance } from "./voice.js";
+
+const speaker = new Speaker();
 
 const $ = (id) => document.getElementById(id);
 const KEY_STORE = "eco-drive-gmaps-key";
@@ -56,6 +59,7 @@ const S = {
   markers: { start: null, end: null, scrub: null, me: null },
   nav: null,
 };
+if (["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) window.ecoDebug = S; // dev-only inspection
 
 // ------------------------------------------------------------------ boot
 
@@ -445,6 +449,14 @@ function renderDetail() {
     : "OpenStreetMap didn't respond, so limits (marked EST.) are conservative estimates from Google's road speeds, capped at 65. Always follow the posted signs.");
   if (p.trafficCat.some((c) => c > 0)) notes.push(`Traffic now: slow stretches are capped so the plan matches Google's delay of ${fmtMin(p.google.durationS - p.google.staticS)}.`);
   else notes.push("No traffic slowdowns reported right now. Lights and stop signs aren't modeled.");
+  const spans = p.structureSpans ?? [];
+  if (spans.length) {
+    const nb = spans.filter((x) => x.kind === "bridge").length, nt = spans.length - nb;
+    const parts = [nb ? `${nb} bridge${nb > 1 ? "s" : ""}` : "", nt ? `${nt} tunnel${nt > 1 ? "s" : ""}` : ""].filter(Boolean).join(" and ");
+    notes.push(`Elevation straightened across ${parts} (terrain data measures the ground under them, up to ${Math.round(Math.max(...spans.map((x) => x.deltaM)) * 3.28084)} ft off).`);
+  } else if (p.limitSource !== "osm") {
+    notes.push("Bridges couldn't be identified without OpenStreetMap, so the elevation may show dips under overpasses.");
+  }
   notes.push("Fuel comes from a physics model of a 2026 Sportage with estimated parameters.");
   $("notes").innerHTML = notes.map((t) => `<li>${t}</li>`).join("");
   $("sheet-actions").hidden = false;
@@ -455,6 +467,11 @@ function renderDetail() {
 $("btn-go").addEventListener("click", () => startNav("gps"));
 $("btn-sim").addEventListener("click", () => startNav("sim"));
 $("btn-end").addEventListener("click", endNav);
+$("btn-voice").addEventListener("click", () => {
+  speaker.setMuted(!speaker.muted);
+  $("btn-voice").setAttribute("aria-pressed", String(!speaker.muted));
+  if (!speaker.muted) speaker.say("Spoken cues on.", { priority: true });
+});
 
 async function keepAwake() { try { S.nav && (S.nav.wake = await navigator.wakeLock?.request("screen")); } catch { /* unsupported */ } }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S.nav) keepAwake(); });
@@ -467,7 +484,16 @@ function startNav(mode) {
   const route = { s_m: p.s, lat: p.lat, lon: p.lon, limit_mph: Array.from(p.postedLimit, (v) => Math.round(v / MPH)) };
   const tCum = new Float64Array(p.s.length);
   for (let k = 1; k < p.s.length; k++) tCum[k] = tCum[k - 1] + (p.s[k] - p.s[k - 1]) / Math.max(0.5, (plan.v[k - 1] + plan.v[k]) / 2);
-  S.nav = { mode, route, idx: buildIndex(route), plan, profile: p, tCum, hint: null, off: 0, lastS: null, lastT: null, v: null, trafficSince: null, follow: true };
+  S.nav = {
+    mode, route, idx: buildIndex(route), plan, profile: p, tCum, hint: null, off: 0, lastS: null, lastT: null, v: null, trafficSince: null, follow: true,
+    spoken: new Set(), wasOff: false, wasTraffic: false, arrivedSaid: false,
+    lastSaidTarget: plan.stretches[0] ? Math.min(plan.stretches[0].target_mph, plan.stretches[0].limit_mph) : null,
+  };
+  speaker.minGapMs = mode === "sim" ? 400 : 4000; // the quiet window is in driving time; sim runs 10x
+  // Speaking inside the Start tap also unlocks speech on iOS for the rest of the drive.
+  $("btn-voice").hidden = !speaker.available;
+  $("btn-voice").setAttribute("aria-pressed", String(!speaker.muted));
+  speaker.say(`Eco drive started. ${plan.stretches[0] ? `Target ${Math.min(plan.stretches[0].target_mph, plan.stretches[0].limit_mph)}.` : ""}`, { priority: true });
 
   $("search").hidden = true; $("sheet").hidden = true; $("nav").hidden = false;
   $("nav-sim").hidden = mode !== "sim";
@@ -509,6 +535,7 @@ function endNav() {
   clearInterval(S.nav.sim);
   S.nav.wake?.release?.().catch(() => {});
   S.nav.dragListener?.remove();
+  speaker.synth?.cancel();
   S.nav = null;
   if (S.markers.me) S.markers.me.map = null;
   $("nav").hidden = true; $("search").hidden = false; $("sheet").hidden = false;
@@ -525,6 +552,7 @@ function onFix({ lat, lon, speed, accuracy, t }) {
   const m = match(N.idx, lat, lon, N.hint);
   if (m.dist > OFF_ROUTE_M) {
     if (++N.off >= 3) N.hint = null;
+    if (N.off >= 3 && !N.wasOff) { N.wasOff = true; speaker.say("Off route. Targets paused.", { priority: true }); }
     $("nav-status").textContent = `Off route · ${Math.round(m.dist)} m from the planned road`;
     $("nav-status").classList.add("bad");
     $("nav-target-wrap").classList.add("dim");
@@ -533,6 +561,7 @@ function onFix({ lat, lon, speed, accuracy, t }) {
     return;
   }
   N.off = 0; N.hint = m.seg;
+  if (N.wasOff) { N.wasOff = false; speaker.say("Back on route.", { priority: true }); }
   const s = m.s;
   let v = speed != null && speed >= 0 ? speed : null;
   if (v == null && N.lastS != null && t - N.lastT > 0.5) v = Math.max(0, (s - N.lastS) / (t - N.lastT));
@@ -563,6 +592,26 @@ function onFix({ lat, lon, speed, accuracy, t }) {
     $("nav-next").innerHTML = `${g.next.target_mph === 0 ? "Stop ahead" : `${g.next.action} ${Math.min(g.next.target_mph, g.next.limit_mph)}`}<span class="dist">in ${dist}</span>`;
   } else $("nav-next").textContent = `Hold ${target} to the destination`;
   $("nav-note").innerHTML = inTraffic ? "Traffic is slower than the plan. Drive with the flow." : "&nbsp;";
+
+  // ---- spoken cues: once per event / per upcoming change
+  if (arrived && !N.arrivedSaid) { N.arrivedSaid = true; speaker.say("You've arrived.", { priority: true }); }
+  else if (inTraffic && !N.wasTraffic) { N.wasTraffic = true; speaker.say("Traffic is slower than the plan. Drive with the flow."); }
+  else if (!inTraffic) {
+    N.wasTraffic = false;
+    if (g.next && g.toNext <= leadDistance(N.v) && !N.spoken.has(g.next.start_m)) {
+      const ds = N.profile.s[1] - N.profile.s[0];
+      const tgt = Math.min(g.next.target_mph, g.next.limit_mph);
+      if (tgt === N.lastSaidTarget || speaker.muted) {
+        N.spoken.add(g.next.start_m); // nothing new to say (e.g. a skipped short stretch in between)
+      } else {
+        // phrase relative to the last spoken target, so cues never contradict each other
+        const action = tgt > N.lastSaidTarget ? "Speed up to" : "Ease off to";
+        const cue = changeCue({ ...g.next, action, target_mph: tgt }, g.toNext, gradeAhead(g.next.start_m, N.profile.grade, ds));
+        // mark as spoken only if it went out; a rate-limited cue retries on the next fix
+        if (speaker.say(cue)) { N.spoken.add(g.next.start_m); N.lastSaidTarget = tgt; }
+      }
+    }
+  }
   const left = Math.max(0, N.tCum[N.tCum.length - 1] - valueAt(N.route, N.tCum, s));
   $("nav-left").textContent = fmtMin(left);
   if (N.mode === "gps") { $("nav-status").textContent = `GPS ±${Math.round(accuracy)} m`; $("nav-status").classList.remove("bad"); }
