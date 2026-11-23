@@ -1,0 +1,12 @@
+# Generated per-route outputs: contain GPS coordinates of your trips, keep them off GitHub
+reports/
+*.plan.json
+*.html
+!src/**/*.html
+!docs/*.html
+
+.venv/
+__pycache__/
+.pytest_cache/
+.DS_Store
+.claude/settings.local.json

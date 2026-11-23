@@ -1,0 +1,26 @@
+[project]
+name = "eco-drive"
+version = "0.1.0"
+description = "Fuel-smart speed plans along a driving route"
+readme = "README.md"
+authors = [
+    { name = "Harsh Muriki", email = "harshsuhith@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.5",
+    "requests>=2.34.2",
+    "scipy>=1.18.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[project.scripts]
+eco-drive = "eco_drive.cli:main"
