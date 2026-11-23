@@ -2,9 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { buildIndex, match, pointAt, guidance, OFF_ROUTE_M } from "../docs/match.js";
+import { buildIndex, match, pointAt, guidance, OFF_ROUTE_M } from "../docs/js/match.js";
 
-const plan = JSON.parse(readFileSync(new URL("../docs/plans/demo.json", import.meta.url)));
+const plan = JSON.parse(readFileSync(new URL("./fixtures/demo_plan.json", import.meta.url)));
 const route = plan.route;
 const idx = buildIndex(route);
 

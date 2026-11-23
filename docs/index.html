@@ -2,90 +2,157 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0F1412">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#00704A">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Eco Drive Live</title>
+<title>Eco Drive</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 40'%3E%3Crect x='2' y='2' width='28' height='36' rx='4' fill='white' stroke='black' stroke-width='3'/%3E%3Ctext x='16' y='31' font-family='Arial' font-weight='900' font-size='17' text-anchor='middle'%3E55%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800;900&family=Overpass+Mono:wght@400;600&display=swap">
-<link rel="stylesheet" href="style.css">
-<script type="module" src="app.js"></script>
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/app.js"></script>
 </head>
 <body>
 
-<!-- Setup: choose plan, then start (needs a tap: GPS permission + screen wake lock) -->
-<main id="setup" class="setup">
-  <header class="trip">
-    <p class="eyebrow">Eco Drive · live</p>
-    <h1 id="trip-from">Loading plan…</h1>
-    <p class="to" id="trip-to"></p>
-    <p class="facts" id="trip-facts"></p>
+<!-- First run: no API key yet -->
+<main id="onboard" class="onboard" hidden>
+  <div class="onboard-inner">
+    <p class="eyebrow">Eco Drive</p>
+    <h1>Fuel-smart speeds for any drive</h1>
+    <p class="lede">Search a route, see the hills, and get the speed for each stretch that saves the most gas for the time it costs.</p>
+    <form id="key-form" class="key-form" autocomplete="off">
+      <label for="key-input">Google Maps API key</label>
+      <input id="key-input" type="password" spellcheck="false" autocapitalize="off" placeholder="AIza…" required>
+      <button class="primary" type="submit">Save and open map</button>
+      <p class="hint">Stored only in this browser. It's sent only to Google, never to this site or anyone else.</p>
+    </form>
+    <details class="howto">
+      <summary>How to get and protect a key</summary>
+      <ol>
+        <li>In Google Cloud Console, create a project and an API key.</li>
+        <li>Enable: <b>Maps JavaScript API</b>, <b>Places API (New)</b>, <b>Routes API</b>, <b>Elevation API</b>.</li>
+        <li>Restrict the key to websites <code>https://harshmuriki.github.io/*</code> (and <code>http://localhost:*/*</code> for testing), and to those four APIs.</li>
+        <li>Set a budget alert. Personal use usually stays inside Google's free monthly caps.</li>
+      </ol>
+    </details>
+  </div>
+</main>
+
+<!-- Map app -->
+<div id="app" class="app" hidden>
+  <div id="map" class="map" aria-label="Map"></div>
+
+  <header class="search" id="search">
+    <div class="search-card">
+      <div class="search-rows">
+        <div class="search-row"><span class="dot dot-start" aria-hidden="true"></span><div id="from-box" class="ac-box"></div></div>
+        <div class="search-row"><span class="dot dot-end" aria-hidden="true"></span><div id="to-box" class="ac-box"></div></div>
+      </div>
+      <div class="search-tools">
+        <button id="btn-settings" class="icon-btn" type="button" aria-label="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.6.1-.9-.1-.9 2-1.6-2-3.4-2.4 1a7 7 0 0 0-1.5-.9L15 3h-4l-.5 2.6c-.5.2-1 .5-1.5.9l-2.4-1-2 3.4 2 1.6-.1.9.1.9-2 1.6 2 3.4 2.4-1c.5.4 1 .7 1.5.9L11 21h4l.5-2.6c.5-.2 1-.5 1.5-.9l2.4 1 2-3.4-2-1.6Z"/></svg>
+        </button>
+      </div>
+    </div>
+    <button id="btn-here" class="chip-btn" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm9 3h-2.1A7 7 0 0 0 13 5.1V3h-2v2.1A7 7 0 0 0 5.1 11H3v2h2.1a7 7 0 0 0 5.9 5.9V21h2v-2.1a7 7 0 0 0 5.9-5.9H21v-2Zm-9 6a5 5 0 1 1 0-10 5 5 0 0 1 0 10Z"/></svg>
+      Start from my location
+    </button>
   </header>
 
-  <section class="block">
-    <h2>Plan</h2>
-    <div class="plans" id="plans" role="radiogroup" aria-label="Choose a plan"></div>
-  </section>
+  <!-- Bottom sheet: routes, plan, terrain -->
+  <section id="sheet" class="sheet" data-state="peek" aria-label="Routes">
+    <button id="sheet-handle" class="sheet-handle" type="button" aria-label="Expand or collapse"><i></i></button>
+    <div class="sheet-body" id="sheet-body">
+      <p class="sheet-empty" id="sheet-empty">Choose a start and a destination to compare routes by fuel and time.</p>
 
-  <section class="block">
-    <h2>Your own route</h2>
-    <p class="muted">Run <code>uv run eco-drive plan "A" "B"</code> on your laptop, send the <code>.plan.json</code> to your phone (AirDrop or Files), then open it here. It stays on this phone and is never uploaded.</p>
-    <div class="row">
-      <label class="secondary file" for="file">Open plan file<input id="file" type="file" accept=".json,application/json"></label>
-      <button id="btn-demo" class="link" type="button" hidden>Back to demo route</button>
+      <div id="routes" class="routes" role="radiogroup" aria-label="Routes"></div>
+
+      <div id="detail" class="detail" hidden>
+        <div class="verdict" id="verdict"></div>
+
+        <div class="plans" id="plans" role="radiogroup" aria-label="Driving plan"></div>
+
+        <div class="terrain">
+          <div class="terrain-head">
+            <h2>Elevation and speed</h2>
+            <span class="readout" id="readout">Drag across the chart</span>
+          </div>
+          <svg id="chart" class="chart" role="img" aria-label="Elevation, speed limit and planned speed along the route"></svg>
+          <div class="legend">
+            <span><i class="k k-elev"></i>Elevation</span>
+            <span><i class="k k-limit"></i>Limit</span>
+            <span><i class="k k-base"></i>At the limit</span>
+            <span><i class="k k-plan"></i>Plan</span>
+            <span id="legend-traffic" hidden><i class="k k-slow"></i>Traffic</span>
+          </div>
+        </div>
+
+        <div class="steps-wrap">
+          <h2>How to drive it</h2>
+          <ol class="steps" id="steps"></ol>
+        </div>
+
+        <ul class="notes" id="notes"></ul>
+      </div>
     </div>
-    <p class="error" id="load-error" hidden></p>
+    <div class="sheet-actions" id="sheet-actions" hidden>
+      <button id="btn-go" class="primary go" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7L12 2Z"/></svg>
+        Start
+      </button>
+      <button id="btn-sim" class="secondary" type="button">Simulate</button>
+    </div>
   </section>
 
-  <section class="block safety">
-    <h2>Before you go</h2>
-    <ul>
-      <li>Mount the phone. Georgia law bans holding it while driving.</li>
-      <li>Traffic and safety come first. Never drive slower than the cars around you to follow a target.</li>
-      <li>Targets assume open roads. Lights, stops and traffic are not in the plan.</li>
-    </ul>
-  </section>
-
-  <section class="block actions">
-    <button id="btn-start" class="primary" type="button" disabled>Start drive</button>
-    <button id="btn-sim" class="secondary" type="button" disabled>Simulate</button>
-  </section>
-</main>
-
-<!-- Drive: one glanceable screen -->
-<main id="drive" class="drive" hidden>
-  <div class="topbar">
-    <span class="status" id="status">Waiting for GPS…</span>
-    <span class="badge" id="sim-badge" hidden>Simulation ×10</span>
-    <button id="btn-end" class="end" type="button">End</button>
+  <!-- Navigation overlay -->
+  <div id="nav" class="nav" hidden>
+    <div class="nav-top">
+      <div class="nav-target" id="nav-target-wrap">
+        <span class="nav-label" id="nav-label">Target</span>
+        <span class="nav-num" id="nav-target">—</span>
+        <span class="nav-unit">mph</span>
+      </div>
+      <div class="nav-next" id="nav-next">&nbsp;</div>
+    </div>
+    <div class="nav-bottom">
+      <div class="nav-row">
+        <div class="nav-you"><span>You</span><b id="nav-you">—</b></div>
+        <div class="sign"><span>SPEED<br>LIMIT</span><b id="nav-limit">—</b></div>
+        <div class="nav-left"><span>Left</span><b id="nav-left">—</b></div>
+      </div>
+      <p class="nav-note" id="nav-note">&nbsp;</p>
+      <div class="nav-status-row">
+        <span class="nav-status" id="nav-status">Waiting for GPS…</span>
+        <span class="badge" id="nav-sim" hidden>Simulation ×10</span>
+        <button id="btn-voice" class="voice" type="button" aria-pressed="true" aria-label="Spoken cues">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="on" d="M3 9v6h4l5 5V4L7 9H3Zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4ZM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6Z"/><path class="off" d="M3 9v6h4l5 5V4L7 9H3Zm13.6 3 2.7-2.7-1.4-1.4-2.7 2.7-2.7-2.7-1.4 1.4 2.7 2.7-2.7 2.7 1.4 1.4 2.7-2.7 2.7 2.7 1.4-1.4-2.7-2.7Z"/></svg>
+        </button>
+        <button id="btn-end" class="end" type="button">End</button>
+      </div>
+    </div>
   </div>
 
-  <div class="target" id="target-wrap">
-    <span class="target-label" id="target-label">Target</span>
-    <span class="target-num" id="target">—</span>
-    <span class="target-unit">mph</span>
-  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+</div>
 
-  <div class="now">
-    <div class="you">
-      <span class="label">You</span>
-      <span class="you-num" id="you">—</span>
+<!-- Settings -->
+<dialog id="settings" class="settings">
+  <form method="dialog" id="settings-form">
+    <h2>Settings</h2>
+    <label for="set-key">Google Maps API key</label>
+    <input id="set-key" type="password" spellcheck="false" autocapitalize="off" autocomplete="off">
+    <label for="set-gas">Gas price ($ per gallon)</label>
+    <input id="set-gas" type="number" step="0.01" min="0.5" max="15" inputmode="decimal">
+    <p class="hint">Vehicle: 2026 Kia Sportage EX 2.5L FWD (estimated parameters).</p>
+    <div class="settings-actions">
+      <button id="set-clear" class="link danger" type="button">Remove key</button>
+      <button class="secondary" value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button class="primary" value="save" type="submit">Save</button>
     </div>
-    <div class="sign" aria-label="Speed limit">
-      <span>SPEED<br>LIMIT</span>
-      <b id="limit">—</b>
-    </div>
-  </div>
-
-  <p class="next" id="next">&nbsp;</p>
-  <p class="note" id="note">&nbsp;</p>
-
-  <div class="progress" aria-hidden="true"><i id="bar"></i></div>
-  <p class="progress-text" id="progress">&nbsp;</p>
-</main>
+  </form>
+</dialog>
 
 </body>
 </html>

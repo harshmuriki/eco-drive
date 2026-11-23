@@ -65,3 +65,16 @@ def test_instructions_start_with_a_real_speed_and_cover_the_route():
     assert st[0].start_mi == 0.0
     assert st[0].target_mph > 0
     assert all(a.end_mi == b.start_mi for a, b in zip(st, st[1:]))
+
+
+def test_instruction_sign_is_the_majority_limit_and_target_never_exceeds_it():
+    from eco_drive.report import instructions
+
+    p = synthetic(length_m=6000.0)
+    # last 200 m of the road is a 65 mph ramp; the rest is 35 mph
+    p.limit_mps[:] = 35 * MPH
+    p.limit_mps[-8:] = 65 * MPH
+    plan = SpeedDP(p).solve(1.0)
+    for st in instructions(p, plan):
+        assert st.limit_mph == 35 or st.start_mi > 3.5
+        assert st.target_mph <= st.limit_mph
